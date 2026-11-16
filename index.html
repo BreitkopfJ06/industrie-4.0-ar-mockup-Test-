@@ -1,86 +1,1304 @@
-<!doctype html>
-<html lang="de">
+<!DOCTYPE html>
+<html lang="de" class="dark">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Industrie 4.0 AR Mockup - Testpage</title>
-  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.min.js"></script>
-  <style>
-    :root { color-scheme: dark; }
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      overflow: hidden;
-    }
-    
-
-    #overlay {
-      display: none;
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      z-index: 10;
-      min-width: 220px;
-      padding: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.45);
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.55);
-      backdrop-filter: blur(2px);
-      font-size: 16px;
-      color: #fff;
-    }
-
-    /* Kamera-/Canvas-Darstellung */
-    video, canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      object-fit: contain !important; /* weniger Zoom-Eindruck */
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPS-i40® Befüllen — AR Machine Telemetry HUD</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        :root {
+            --hud-cyan: #38bdf8;
+            --hud-emerald: #10b981;
+            --hud-amber: #f59e0b;
+            --hud-rose: #f43f5e;
+        }
+        body {
+            background-color: #050b16;
+            background-image:
+                radial-gradient(circle at 15% 12%, rgba(56, 189, 248, 0.11), transparent 38%),
+                radial-gradient(circle at 85% 82%, rgba(16, 185, 129, 0.08), transparent 42%),
+                linear-gradient(rgba(56, 189, 248, 0.045) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56, 189, 248, 0.045) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+            color: #e2e8f0;
+        }
+        .hud-panel {
+            background: linear-gradient(180deg, rgba(11, 21, 41, 0.90) 0%, rgba(7, 14, 28, 0.92) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            box-shadow: 0 18px 40px rgba(2, 6, 23, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+        }
+        .hud-subcard {
+            background: rgba(6, 13, 26, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+        .scanline {
+            background: linear-gradient(to bottom, transparent 0%, rgba(56, 189, 248, 0.06) 50%, transparent 100%);
+            background-size: 100% 6px;
+        }
+        .glow-cyan {
+            box-shadow: 0 0 24px rgba(56, 189, 248, 0.18);
+        }
+    </style>
 </head>
-<body>
-  <a-scene
-    vr-mode-ui="enabled: false"
-    renderer="logarithmicDepthBuffer: true"
-    embedded
-    arjs="sourceType: webcam; facingMode: environment; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720; debugUIEnabled: false;">
-    <a-marker preset="hiro" id="hiro-marker"></a-marker>
-    <a-entity camera></a-entity>
-  </a-scene>
+<body class="min-h-screen pb-24 font-sans antialiased selection:bg-sky-500/30 selection:text-sky-200">
+    <!-- Toast Notification -->
+    <div id="toast-banner" class="fixed top-16 right-4 z-50 hidden px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-sky-400/50 text-xs font-mono text-sky-200 shadow-2xl flex items-center gap-2.5">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toast-text">Bereit</span>
+    </div>
 
-  <div id="overlay">
-    <div id="marker-count">The Marker was not yet found</div>
-  </div>
+    <!-- Top AR HUD Bar -->
+    <header class="sticky top-0 z-30 border-b border-slate-800/90 bg-slate-950/85 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-sky-500/25 to-emerald-500/15 border border-sky-400/40 flex items-center justify-center text-sky-400 glow-cyan">
+                    <i class="fa-solid fa-cubes-stacked text-lg"></i>
+                    <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-950 animate-pulse"></span>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h1 class="text-sm sm:text-base font-bold text-white tracking-tight">CPS-i40® Befüllen — AR Spatial Telemetry</h1>
+                        <span class="px-2 py-0.5 text-[10px] font-mono rounded-full bg-sky-500/15 text-sky-300 border border-sky-400/30">HIRO-BEF-01</span>
+                        <span class="px-2 py-0.5 text-[10px] font-mono rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/30">SINGLE SENSOR #1</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 font-mono">ETS DIDACTIC / ELABO • +AM Automat • +AL 24V Transfer • S7-1516 (+AF)</p>
+                </div>
+            </div>
 
-  <script>
-    const overlay = document.getElementById('overlay');
-    const hiroMarker = document.getElementById('hiro-marker');
-    const markerCount = document.getElementById('marker-count');
-    let markerFoundCount = 0;
+            <!-- 3-Way View Switcher -->
+            <div class="flex items-center gap-1 p-1 rounded-2xl bg-slate-900/95 border border-slate-800 font-mono text-xs">
+                <button id="mode-dashboard" onclick="setViewMode('dashboard')" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-cyan-300 text-slate-950 font-semibold shadow-sm transition">
+                    <i class="fa-solid fa-layer-group mr-1.5"></i>HUD Ohne Kamera
+                </button>
+                <button id="mode-sim-ar" onclick="setViewMode('sim-ar')" class="px-3.5 py-1.5 rounded-xl text-slate-300 hover:text-white transition">
+                    <i class="fa-solid fa-cube mr-1.5"></i>3D Sim-AR
+                </button>
+                <button id="mode-camera" onclick="setViewMode('camera')" class="px-3.5 py-1.5 rounded-xl text-slate-300 hover:text-white transition">
+                    <i class="fa-solid fa-camera mr-1.5"></i>Kamera AR
+                </button>
+            </div>
+        </div>
+    </header>
 
-    hiroMarker.addEventListener('markerFound', () => {
-      console.debug('Marker found');
-      markerFoundCount += 1;
-      markerCount.textContent = `The Marker was found the ${markerFoundCount} time`;
-      overlay.style.display = 'block';
-    });
+    <main class="max-w-7xl mx-auto px-4 pt-5 space-y-5">
+        <!-- Optional AR Stage (Simulated 3D Wireframe Station or Live Camera Overlay) -->
+        <section id="ar-viewport-section" class="hidden hud-panel rounded-3xl p-4 sm:p-5 overflow-hidden relative">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2.5 font-mono text-xs flex-wrap">
+                    <span id="ar-marker-badge" class="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/40">
+                        <i class="fa-solid fa-qrcode mr-1"></i>HIRO-BEF-01: BYPASSED (NO-SCAN ACTIVE)
+                    </span>
+                    <span class="text-slate-400">Anchor: +AM Automat / Vib-Sensor #1</span>
+                    <span class="text-slate-500 hidden sm:inline">• Drag zum Drehen (Sim-AR)</span>
+                </div>
+                <button onclick="setViewMode('dashboard')" class="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-300">
+                    <i class="fa-solid fa-xmark mr-1"></i>HUD Vollansicht
+                </button>
+            </div>
 
-    hiroMarker.addEventListener('markerLost', () => {
-      console.debug('Marker lost');
-      overlay.style.display = 'none';
-    });
+            <div class="relative w-full h-72 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800/90 scanline">
+                <video id="ar-camera-video" autoplay playsinline muted class="hidden w-full h-full object-cover"></video>
+                <canvas id="ar-sim-canvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+                <div id="ar-camera-fallback" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-center p-4">
+                    <i class="fa-solid fa-video-slash text-2xl text-amber-400 mb-2"></i>
+                    <p class="text-xs font-mono text-slate-300">Kamera nicht verfügbar — 3D Sim-AR Anker bleibt aktiv.</p>
+                </div>
+                <!-- Floating AR Callout Pills -->
+                <div class="pointer-events-none absolute top-3 left-3 px-3 py-1.5 rounded-xl bg-slate-950/85 border border-sky-400/40 font-mono text-[11px] text-sky-300">
+                    +AM AUTOMAT • VIB-01: <span id="ar-overlay-vib" class="text-white font-bold">1.12 mm/s</span>
+                </div>
+                <div class="pointer-events-none absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-slate-950/85 border border-emerald-400/40 font-mono text-[11px] text-emerald-300">
+                    HIRO-BEF-01 • <span id="ar-overlay-sensor" class="text-white font-bold">P-101.Vibration</span>
+                </div>
+            </div>
+        </section>
 
-    /* global functions for debugging */
-    window.fireEventMarkerFound = () => {
-      const event = new CustomEvent('markerFound');
-      hiroMarker.dispatchEvent(event);
-    }
+        <!-- Node-RED / OPC UA (Milo) -> SQLite -> WebSocket & MQTT Bridge Panel -->
+        <section class="hud-panel rounded-3xl p-5 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/90 pb-3">
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-400/35 font-mono text-[10px] text-purple-300">RPI 2 • NODE-RED • SQLITE</span>
+                        <span class="text-[11px] font-mono text-slate-400">OPC UA Milo: opc.tcp://milo.digitalpetri.com:62541/milo</span>
+                    </div>
+                    <h2 class="text-sm sm:text-base font-bold text-white mt-1 flex items-center gap-2">
+                        <i class="fa-solid fa-network-wired text-sky-400"></i>
+                        OPC UA → Node-RED (SQLite) → WebSocket &amp; MQTT Bridge
+                    </h2>
+                    <p class="text-[11px] text-slate-400 font-mono">
+                        Node: Demo.Alarms.Plant.PowerHouse.P-101.Vibration • Tunnel: localhost.run • Broker: broker.hivemq.com
+                    </p>
+                </div>
 
-    window.fireEventMarkerLost = () => {
-      const event = new CustomEvent('markerLost');
-      hiroMarker.dispatchEvent(event);
-    }
-  </script>
+                <div class="flex items-center gap-2 font-mono text-xs flex-wrap">
+                    <span id="ws-status-pill" class="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-300">
+                        WS: SIM / STANDBY
+                    </span>
+                    <span id="mqtt-status-pill" class="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-300">
+                        MQTT: TRENNEN
+                    </span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 font-mono text-xs">
+                <!-- WebSocket (Node-RED / localhost.run) Config -->
+                <div class="lg:col-span-6 hud-subcard rounded-2xl p-3.5 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-bold text-sky-300">1. WEBSOCKET STREAM (RPI 2 / LOCALHOST.RUN)</span>
+                        <button onclick="toggleWebSocketSource()" id="btn-ws-toggle" class="px-2.5 py-1 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/50 text-sky-200 text-[11px] transition">
+                            Verbinden
+                        </button>
+                    </div>
+                    <div class="flex gap-2">
+                        <input id="ws-url-input" type="text" value="wss://example.lhr.life/ws/vibration" placeholder="wss://<subdomain>.lhr.life/ws/vibration" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-[11px] text-slate-200 focus:outline-none focus:border-sky-400">
+                        <button onclick="injectSimulatedNodeRedPayload()" class="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 shrink-0">
+                            Test-Frame
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-[10px] text-slate-400">
+                        <div class="p-2 rounded-xl bg-slate-950/80 border border-slate-800">
+                            <span class="block text-slate-500">OPC UA Quelle</span>
+                            <span class="text-slate-200">P-101.Vibration (Single)</span>
+                        </div>
+                        <div class="p-2 rounded-xl bg-slate-950/80 border border-slate-800">
+                            <span class="block text-slate-500">Pi 2 Persistenz</span>
+                            <span id="sqlite-row-counter" class="text-emerald-400">SQLite: 300 Rows</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MQTT (broker.hivemq.com) Config & Text Display -->
+                <div class="lg:col-span-6 hud-subcard rounded-2xl p-3.5 space-y-2.5">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[11px] font-bold text-emerald-300">2. MQTT BROKER (broker.hivemq.com)</span>
+                        <button onclick="toggleMqttConnection()" id="btn-mqtt-toggle" class="px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-[11px] transition">
+                            MQTT Verbinden
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        <div class="sm:col-span-4">
+                            <label class="text-[10px] text-slate-500 block">Kistennummer</label>
+                            <input id="mqtt-box-id" type="text" value="kiste-01" oninput="updateMqttTopicPreview()" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-sky-300">
+                        </div>
+                        <div class="sm:col-span-8">
+                            <label class="text-[10px] text-slate-500 block">Topic (Publish &amp; Subscribe)</label>
+                            <div id="mqtt-topic-preview" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-[11px] text-emerald-300 truncate">
+                                /bbk-lf7/kiste-01/power-house/vibration
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Abonnierte MQTT-Daten als Klartext-Darstellung -->
+                    <div class="p-2.5 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-1">
+                        <div class="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>MQTT TEXT-AUSGABE (SUBSCRIBED)</span>
+                            <span id="mqtt-last-ts" class="text-slate-500">--:--:--</span>
+                        </div>
+                        <p id="mqtt-text-display" class="text-xs font-semibold text-emerald-300 break-words">
+                            Warte auf MQTT-Daten auf /bbk-lf7/kiste-01/power-house/vibration ...
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fremde Gruppen-Topics ("Horchen" & Vergleich der Unterschiede) -->
+            <div class="hud-subcard rounded-2xl p-3.5 font-mono text-xs space-y-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-[11px] font-bold text-amber-300">
+                        3. FREMD-TOPICS (/bbk-lf7/+/power-house/vibration) — VERGLEICH DER UNTERSCHIEDE
+                    </span>
+                    <span class="text-[10px] text-slate-400">Wildcard-Listener für andere Gruppen-Kisten</span>
+                </div>
+                <div id="foreign-mqtt-list" class="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
+                    <div class="p-2 rounded-xl bg-slate-950/90 border border-slate-800">
+                        <div class="text-sky-300 truncate">/bbk-lf7/kiste-02/power-house/vibration</div>
+                        <div class="text-slate-300 mt-0.5">Wert: <span class="text-white font-bold">1.84</span> • Format: Plain Float</div>
+                    </div>
+                    <div class="p-2 rounded-xl bg-slate-950/90 border border-slate-800">
+                        <div class="text-sky-300 truncate">/bbk-lf7/kiste-04/power-house/vibration</div>
+                        <div class="text-slate-300 mt-0.5">Wert: <span class="text-white font-bold">2.41</span> • Format: JSON {"vib":...}</div>
+                    </div>
+                    <div class="p-2 rounded-xl bg-slate-950/90 border border-slate-800">
+                        <div class="text-sky-300 truncate">/bbk-lf7/kiste-07/power-house/vibration</div>
+                        <div class="text-slate-300 mt-0.5">Wert: <span class="text-white font-bold">0.95</span> • Format: String + Einheit</div>
+                    </div>
+                </div>
+                <p id="mqtt-diff-summary" class="text-[11px] text-slate-400">
+                    Unterschiede zwischen Gruppen: Payload-Formate (Plain-Zahl vs. JSON-Objekt vs. String mit Einheit), Abtastintervalle, Skalierung/Nachkommastellen sowie teilweise abweichende Kistennummern oder Groß-/Kleinschreibung im Topic.
+                </p>
+            </div>
+        </section>
+
+        <!-- Primary Spatial HUD Row: Single Vibration Sensor #1 + CPS-i40 Befüllen Station -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <!-- Single Vibration Sensor #1 Module -->
+            <div class="lg:col-span-7 hud-panel rounded-3xl p-5 flex flex-col justify-between space-y-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-400/30 font-mono text-[10px] text-sky-300">SENSOR 01 / 01</span>
+                            <span class="text-xs font-mono text-slate-400">Montage: +AM Automat / +AL Transfer</span>
+                        </div>
+                        <h2 class="text-base sm:text-lg font-bold text-white mt-1">Schwingungssensor #1 (Single-Channel)</h2>
+                    </div>
+                    <div class="text-right font-mono">
+                        <div class="flex items-baseline justify-end gap-1.5">
+                            <span id="live-vib-rms" class="text-3xl font-bold text-sky-400 tracking-tight">1.12</span>
+                            <span class="text-xs text-slate-400">mm/s RMS</span>
+                        </div>
+                        <div id="live-vib-zone" class="text-[11px] font-semibold text-emerald-400 mt-0.5">
+                            ISO 10816-3 ZONE A • GUT (Peak: 1.48 mm/s)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Waveform & FFT Mini Split -->
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div class="sm:col-span-8 hud-subcard rounded-2xl p-3">
+                        <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1.5">
+                            <span>ECHTZEIT-WAVEFORM (SINGLE SENSOR)</span>
+                            <span id="vib-event-tag" class="text-sky-300">EVENT: +AM DOSIERUNG</span>
+                        </div>
+                        <div class="w-full h-36">
+                            <canvas id="vibration-waveform-canvas" class="w-full h-full block"></canvas>
+                        </div>
+                    </div>
+                    <div class="sm:col-span-4 hud-subcard rounded-2xl p-3 flex flex-col justify-between">
+                        <div>
+                            <div class="text-[10px] font-mono text-slate-400 mb-1.5">SPEKTRUM / KLASSE</div>
+                            <div class="w-full h-24">
+                                <canvas id="vibration-spectrum-canvas" class="w-full h-full block"></canvas>
+                            </div>
+                        </div>
+                        <div class="space-y-1 pt-2 border-t border-slate-800/80 font-mono text-[10px]">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Dominant Freq:</span>
+                                <span id="vib-dom-freq" class="text-slate-200">48.5 Hz</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Kreisfaktor:</span>
+                                <span id="vib-crest" class="text-emerald-400">1.32</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ISO 10816-3 Severity Bar -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between font-mono text-[10px] text-slate-400">
+                        <span>0.0</span>
+                        <span class="text-emerald-400">Zone A (&lt;1.8)</span>
+                        <span class="text-amber-400">Zone B (1.8–4.5)</span>
+                        <span class="text-rose-400">Zone C (&gt;4.5)</span>
+                    </div>
+                    <div class="w-full h-2.5 rounded-full bg-slate-900 overflow-hidden flex p-0.5 border border-slate-800">
+                        <div class="w-[30%] bg-emerald-500/80 rounded-l-full"></div>
+                        <div class="w-[40%] bg-amber-400/80"></div>
+                        <div class="w-[30%] bg-rose-500/80 rounded-r-full"></div>
+                    </div>
+                    <div class="relative w-full h-2">
+                        <div id="iso-marker-pointer" class="absolute -top-3 w-3 h-3 rounded-full bg-white border-2 border-sky-400 shadow transition-all duration-300" style="left: 18%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: CPS-i40 Befüllen Hardware & Spatial Map + Live Event Log -->
+            <div class="lg:col-span-5 hud-panel rounded-3xl p-5 flex flex-col justify-between space-y-4">
+                <div>
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/30 font-mono text-[10px] text-emerald-300">SPATIAL ANCHOR • HIRO-BEF-01</span>
+                        <span class="text-[11px] font-mono text-slate-400">S7-1516 (+AF)</span>
+                    </div>
+                    <h2 class="text-base sm:text-lg font-bold text-white mt-1">Station CPS-i40® Befüllen — Hardware-Map</h2>
+                    <p class="text-[11px] text-slate-400 font-mono">Baugruppen-Status &amp; Schwingungsübertragung auf Sensor #1</p>
+                </div>
+
+                <!-- Interactive Hardware / Spatial Node Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 font-mono text-xs">
+                    <div class="hud-subcard rounded-2xl p-3 border-sky-400/35">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-sky-300 font-bold">+AM AUTOMAT</span>
+                            <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">AKTIV</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-1">Befüll-Vorrichtung &amp; Sensor #1</p>
+                        <div class="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Kopplung:</span>
+                            <span id="hw-am-coupling" class="text-sky-300">100 % Direkt</span>
+                        </div>
+                    </div>
+
+                    <div class="hud-subcard rounded-2xl p-3">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-cyan-300 font-bold">+AL TRANSFER</span>
+                            <span id="hw-al-state" class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">24V DC</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-1">80590-V3 Werkstückträger-Band</p>
+                        <div class="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Förderband:</span>
+                            <span id="hw-conveyor-speed" class="text-slate-200">0.18 m/s</span>
+                        </div>
+                    </div>
+
+                    <div class="hud-subcard rounded-2xl p-3">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-amber-300 font-bold">+2a / +2b STOPPER</span>
+                            <span id="hw-stopper-state" class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">VERRIEGELT</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-1">Stopperset &amp; Ventilinsel (81108)</p>
+                        <div class="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Impulsbeitrag:</span>
+                            <span id="hw-stopper-impact" class="text-amber-300">+0.14 mm/s</span>
+                        </div>
+                    </div>
+
+                    <div class="hud-subcard rounded-2xl p-3">
+                        <div class="flex items-center justify-between text-[10px]">
+                            <span class="text-purple-300 font-bold">+3b RFID / +5e VENTIL</span>
+                            <span id="hw-rfid-tag" class="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">TAG-04A9</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-1">Antenne (70092) &amp; Füllventil</p>
+                        <div class="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>ET200SP IO-Link:</span>
+                            <span class="text-emerald-400">ONLINE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compact Live Sensor & Pipeline Feed -->
+                <div class="hud-subcard rounded-2xl p-3 font-mono text-[11px] space-y-2">
+                    <div class="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>LIVE SENSOR- &amp; PIPELINE-PROTOKOLL</span>
+                        <span class="text-sky-300">OPC UA → SQLITE → WS/MQTT</span>
+                    </div>
+                    <div id="live-pipeline-log" class="space-y-1 max-h-24 overflow-y-auto text-[10px] text-slate-300">
+                        <div>[INIT] Vib-Sensor #1 initialisiert (P-101.Vibration)</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Daily Data Volume & Reduction Strategies -->
+        <section class="hud-panel rounded-3xl p-5 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/90 pb-3">
+                <div>
+                    <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-database text-purple-400"></i>
+                        Tägliche Datenmenge (1 Sensor) &amp; Reduktionsstrategien
+                    </h3>
+                    <p class="text-xs text-slate-400">Berechnung für 24 h Dauerbetrieb an der Station CPS-i40® Befüllen (Vib-Sensor #1)</p>
+                </div>
+                <div class="flex items-center gap-2 font-mono text-xs">
+                    <label for="calc-rate-select" class="text-slate-400">Abtastrate:</label>
+                    <select id="calc-rate-select" onchange="updateDataVolumeCalculator()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-sky-300">
+                        <option value="1">1 Hz (1 Sample/s)</option>
+                        <option value="10" selected>10 Hz (100 ms)</option>
+                        <option value="100">100 Hz (10 ms)</option>
+                        <option value="1000">1 kHz (1 ms)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono">
+                <div class="hud-subcard rounded-2xl p-3.5">
+                    <span class="text-[10px] text-slate-400 block">MESSWERTE PRO TAG (24 H)</span>
+                    <span id="calc-daily-samples" class="text-xl font-bold text-white">864.000</span>
+                    <span id="calc-daily-samples-sub" class="text-[10px] text-slate-400 block">86.400 s × 10 Hz (1 Sensor)</span>
+                </div>
+                <div class="hud-subcard rounded-2xl p-3.5">
+                    <span class="text-[10px] text-rose-300 block">ROHDATEN-VOLUMEN (~120 B JSON)</span>
+                    <span id="calc-raw-mb" class="text-xl font-bold text-rose-400">98.88 MB / Tag</span>
+                    <span id="calc-raw-month" class="text-[10px] text-slate-400 block">~2.90 GB / 30 Tage</span>
+                </div>
+                <div class="rounded-2xl p-3.5 bg-emerald-500/10 border border-emerald-400/35">
+                    <span class="text-[10px] text-emerald-300 block">REDUZIERTES VOLUMEN</span>
+                    <span id="calc-reduced-mb" class="text-xl font-bold text-emerald-400">13.55 MB / Tag</span>
+                    <span id="calc-savings-pct" class="text-[10px] text-emerald-300 block">Ersparnis: 86.3 %</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <label class="flex items-start justify-between gap-3 p-3 rounded-2xl hud-subcard cursor-pointer hover:border-sky-400/40 transition">
+                    <div class="flex items-start gap-2.5">
+                        <input id="strat-deadband" type="checkbox" checked onchange="updateDataVolumeCalculator()" class="mt-0.5 accent-sky-400">
+                        <div>
+                            <span class="font-semibold text-slate-200 block">Deadband / Schwellwert-Filter (±0,08 mm/s)</span>
+                            <span class="text-[11px] text-slate-400">Unterdrückt Rauschen im Stillstand (+AL Transfer gestoppt).</span>
+                        </div>
+                    </div>
+                    <span class="font-mono text-emerald-400 shrink-0">-45 %</span>
+                </label>
+
+                <label class="flex items-start justify-between gap-3 p-3 rounded-2xl hud-subcard cursor-pointer hover:border-sky-400/40 transition">
+                    <div class="flex items-start gap-2.5">
+                        <input id="strat-event" type="checkbox" checked onchange="updateDataVolumeCalculator()" class="mt-0.5 accent-sky-400">
+                        <div>
+                            <span class="font-semibold text-slate-200 block">Event-Triggered Logging (+AM / +2a / +5d)</span>
+                            <span class="text-[11px] text-slate-400">Nur bei Kugelabwurf, Ventilhub oder Grenzwert speichern.</span>
+                        </div>
+                    </div>
+                    <span class="font-mono text-emerald-400 shrink-0">-35 %</span>
+                </label>
+
+                <label class="flex items-start justify-between gap-3 p-3 rounded-2xl hud-subcard cursor-pointer hover:border-sky-400/40 transition">
+                    <div class="flex items-start gap-2.5">
+                        <input id="strat-rollup" type="checkbox" checked onchange="updateDataVolumeCalculator()" class="mt-0.5 accent-sky-400">
+                        <div>
+                            <span class="font-semibold text-slate-200 block">Downsampling &amp; Rollup (Min / Avg / Max)</span>
+                            <span class="text-[11px] text-slate-400">Verdichtet Rohdaten für /last-5m &amp; /avg-5m Abfragen.</span>
+                        </div>
+                    </div>
+                    <span class="font-mono text-emerald-400 shrink-0">-55 %</span>
+                </label>
+
+                <label class="flex items-start justify-between gap-3 p-3 rounded-2xl hud-subcard cursor-pointer hover:border-sky-400/40 transition">
+                    <div class="flex items-start gap-2.5">
+                        <input id="strat-binary" type="checkbox" onchange="updateDataVolumeCalculator()" class="mt-0.5 accent-sky-400">
+                        <div>
+                            <span class="font-semibold text-slate-200 block">Binär-Payload &amp; Delta-Encoding</span>
+                            <span class="text-[11px] text-slate-400">Reduziert ~120 B JSON-Frame auf ~14 B Kompakt-Payload.</span>
+                        </div>
+                    </div>
+                    <span class="font-mono text-emerald-400 shrink-0">-75 %</span>
+                </label>
+            </div>
+        </section>
+    </main>
+
+    <!-- Bottom Presentation / Simulation Dock -->
+    <footer class="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[95%] max-w-3xl">
+        <div class="hud-panel rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
+            <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-[10px] text-slate-400 mr-1 hidden sm:inline">SIM:</span>
+                <button onclick="setScenario('normal')" id="scen-normal" class="px-3 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-semibold transition">
+                    1. Normal
+                </button>
+                <button onclick="setScenario('resonance')" id="scen-resonance" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white transition">
+                    2. Ventil (+5e)
+                </button>
+                <button onclick="setScenario('fault')" id="scen-fault" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white transition">
+                    3. Stopper (+2a)
+                </button>
+            </div>
+
+            <button onclick="triggerSphereDropShock()" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-500/25 to-cyan-400/25 hover:from-sky-500/35 hover:to-cyan-400/35 border border-sky-400/50 text-sky-200 font-semibold transition">
+                <i class="fa-solid fa-bolt mr-1.5 text-amber-300"></i>Kugelabwurf (+5d)
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        /*************************************************************************
+         * 1. STATE & CPS-i40 BEFÜLLEN CONFIGURATION
+         *************************************************************************/
+        const appState = {
+            viewMode: 'dashboard',
+            scenario: 'normal',
+            phase: 0,
+            shockPulse: 0,
+            simYaw: 0.45,
+            simPitch: 0.28,
+            isDragging: false,
+            lastPointerX: 0,
+            lastPointerY: 0,
+            processStepIndex: 2,
+            sphereCount: 6,
+            hopperLevel: 78.4,
+            rfidIndex: 0,
+            rfidTags: ['TAG-04A9-BEF', 'TAG-77C1-BEF', 'TAG-91E0-BEF', 'TAG-2B8F-BEF'],
+            sphereTypes: ['6 Stk (Stahl / Blau)', '4 Stk (Messing / Gelb)', '8 Stk (Kunststoff / Rot)'],
+            waveformHistory: [],
+            maxWaveformPoints: 110,
+            dbRecords: [],
+            activeRestEndpoint: 'latest',
+            historyWindow: '5m',
+            historyChart: null,
+            cameraStream: null,
+            wsSocket: null,
+            wsConnected: false,
+            mqttClient: null,
+            mqttConnected: false,
+            foreignTopicsSeen: {}
+        };
+
+        const SCENARIO_CONFIG = {
+            normal: {
+                base: 1.12,
+                noise: 0.14,
+                freq: '48.5 Hz',
+                event: 'EVENT: +AM DOSIERUNG',
+                zone: 'ISO 10816-3 ZONE A • GUT',
+                color: 'text-emerald-400',
+                pointerPct: 18
+            },
+            resonance: {
+                base: 2.85,
+                noise: 0.36,
+                freq: '124.0 Hz',
+                event: 'EVENT: +5e VENTILHUB',
+                zone: 'ISO 10816-3 ZONE B • TOLERANZ',
+                color: 'text-amber-400',
+                pointerPct: 52
+            },
+            fault: {
+                base: 5.05,
+                noise: 0.62,
+                freq: '215.0 Hz',
+                event: 'EVENT: +2a STOPPER-SCHLAG',
+                zone: 'ISO 10816-3 ZONE C • WARNUNG',
+                color: 'text-rose-400',
+                pointerPct: 84
+            }
+        };
+
+        function showToast(message, iconClass) {
+            const banner = document.getElementById('toast-banner');
+            const textEl = document.getElementById('toast-text');
+            const iconEl = document.getElementById('toast-icon');
+            if (!banner || !textEl) return;
+            textEl.textContent = message;
+            if (iconEl && iconClass) iconEl.className = `fa-solid ${iconClass}`;
+            banner.classList.remove('hidden');
+            clearTimeout(appState.toastTimer);
+            appState.toastTimer = setTimeout(() => banner.classList.add('hidden'), 2300);
+        }
+
+        /*************************************************************************
+         * 2. VIEW MODE & SCENARIO CONTROLS
+         *************************************************************************/
+        function setViewMode(mode) {
+            appState.viewMode = mode;
+            const section = document.getElementById('ar-viewport-section');
+            const video = document.getElementById('ar-camera-video');
+            const canvas = document.getElementById('ar-sim-canvas');
+            const fallback = document.getElementById('ar-camera-fallback');
+
+            ['dashboard', 'sim-ar', 'camera'].forEach(m => {
+                const btn = document.getElementById(`mode-${m}`);
+                if (!btn) return;
+                btn.className = (m === mode)
+                    ? 'px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-cyan-300 text-slate-950 font-semibold shadow-sm transition'
+                    : 'px-3.5 py-1.5 rounded-xl text-slate-300 hover:text-white transition';
+            });
+
+            if (mode === 'dashboard') {
+                section.classList.add('hidden');
+                stopCameraStream();
+                return;
+            }
+
+            section.classList.remove('hidden');
+            if (mode === 'sim-ar') {
+                stopCameraStream();
+                video.classList.add('hidden');
+                fallback.classList.add('hidden');
+                canvas.classList.remove('hidden');
+            } else if (mode === 'camera') {
+                canvas.classList.add('hidden');
+                startCameraStream();
+            }
+        }
+
+        async function startCameraStream() {
+            const video = document.getElementById('ar-camera-video');
+            const fallback = document.getElementById('ar-camera-fallback');
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('No mediaDevices');
+                }
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                appState.cameraStream = stream;
+                video.srcObject = stream;
+                video.classList.remove('hidden');
+                fallback.classList.add('hidden');
+            } catch (err) {
+                video.classList.add('hidden');
+                fallback.classList.remove('hidden');
+            }
+        }
+
+        function stopCameraStream() {
+            if (appState.cameraStream) {
+                appState.cameraStream.getTracks().forEach(t => t.stop());
+                appState.cameraStream = null;
+            }
+        }
+
+        function setScenario(name) {
+            appState.scenario = name;
+            const activeStyles = {
+                normal: 'px-3 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-semibold transition',
+                resonance: 'px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-300 font-semibold transition',
+                fault: 'px-3 py-1.5 rounded-xl bg-rose-500/20 border border-rose-400/50 text-rose-300 font-semibold transition'
+            };
+            ['normal', 'resonance', 'fault'].forEach(k => {
+                const btn = document.getElementById(`scen-${k}`);
+                if (!btn) return;
+                btn.className = (k === name)
+                    ? activeStyles[k]
+                    : 'px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white transition';
+            });
+            showToast(`Station-Zustand: ${name.toUpperCase()}`, 'fa-wave-square text-sky-400');
+        }
+
+        function triggerSphereDropShock() {
+            appState.shockPulse = 2.05;
+            appState.sphereCount = (appState.sphereCount % 10) + 1;
+            appState.hopperLevel = Math.max(10.0, Number((appState.hopperLevel - 0.9).toFixed(1)));
+            showToast('Kugelabwurf (+5d) — Sensor #1 Impuls erfasst', 'fa-bolt text-amber-400');
+        }
+
+        /*************************************************************************
+         * 3. DATABASE HISTORY & 3 REST ENDPOINTS (/latest, /last-5m, /avg-5m)
+         *************************************************************************/
+        function seedHistoricalDbRecords() {
+            const now = Date.now();
+            appState.dbRecords = [];
+            for (let i = 299; i >= 0; i--) {
+                const ts = now - i * 1000;
+                const val = Math.max(0.15, Number((1.12 + Math.sin(i * 0.14) * 0.24 + (Math.random() - 0.5) * 0.12).toFixed(2)));
+                appState.dbRecords.push({
+                    ts,
+                    iso: new Date(ts).toISOString(),
+                    sensor_id: 'vib-01',
+                    station: 'CPS-i40-Befuellen',
+                    vibration_rms_mms: val,
+                    peak_mms: Number((val * 1.32).toFixed(2)),
+                    rfid_tag: appState.rfidTags[i % appState.rfidTags.length],
+                    net_weight_g: Number((24.2 + Math.sin(i * 0.2) * 0.3).toFixed(2)),
+                    event_tag: (i % 15 === 0) ? 'SPHERE_DROP_+5d' : 'DOSE_+AM'
+                });
+            }
+        }
+
+        function appendDbRecord(rmsValue) {
+            const now = Date.now();
+            const netVal = Number((24.3 + Math.sin(appState.phase * 0.35) * 0.32).toFixed(2));
+            appState.dbRecords.push({
+                ts: now,
+                iso: new Date(now).toISOString(),
+                sensor_id: 'vib-01',
+                opcua_node: 'Demo.Alarms.Plant.PowerHouse.P-101.Vibration',
+                station: 'CPS-i40-Befuellen',
+                vibration_rms_mms: Number(rmsValue.toFixed(2)),
+                peak_mms: Number((rmsValue * 1.32).toFixed(2)),
+                rfid_tag: appState.rfidTags[appState.rfidIndex],
+                net_weight_g: netVal,
+                event_tag: appState.shockPulse > 0.35 ? 'SPHERE_DROP_+5d' : 'DOSE_+AM'
+            });
+            if (appState.dbRecords.length > 1800) {
+                appState.dbRecords.shift();
+            }
+        function appendPipelineLog(text) {
+            const box = document.getElementById('live-pipeline-log');
+            if (!box) return;
+            const ts = new Date().toTimeString().split(' ')[0];
+            const row = document.createElement('div');
+            row.textContent = `[${ts}] ${text}`;
+            box.prepend(row);
+            while (box.children.length > 8) {
+                box.removeChild(box.lastChild);
+            }
+        }
+
+        function applyIncomingSensorValue(rawVal, sourceLabel, rawText) {
+            const num = parseFloat(rawVal);
+            if (!Number.isFinite(num)) return;
+            const clamped = Math.max(0.05, Math.min(12, num));
+            appState.waveformHistory.push(clamped);
+            if (appState.waveformHistory.length > appState.maxWaveformPoints) {
+                appState.waveformHistory.shift();
+            }
+            appendDbRecord(clamped);
+            document.getElementById('live-vib-rms').textContent = clamped.toFixed(2);
+            document.getElementById('ar-overlay-vib').textContent = `${clamped.toFixed(2)} mm/s`;
+            document.getElementById('vib-event-tag').textContent = `QUELLE: ${sourceLabel}`;
+            appendPipelineLog(`${sourceLabel}: ${clamped.toFixed(2)} mm/s (SQLite #${appState.dbRecords.length})`);
+            if (rawText) {
+                document.getElementById('mqtt-text-display').textContent = rawText;
+                document.getElementById('mqtt-last-ts').textContent = new Date().toTimeString().split(' ')[0];
+            }
+            drawWaveformCanvas();
+            refreshRestEndpoints();
+            updateHistoryChartJs();
+        }
+
+        function injectSimulatedNodeRedPayload() {
+            const cfg = SCENARIO_CONFIG[appState.scenario] || SCENARIO_CONFIG.normal;
+            const val = Number((cfg.base + (Math.random() - 0.5) * 0.4 + appState.shockPulse).toFixed(2));
+            const payload = {
+                source: 'rpi2-nodered-sqlite',
+                opcua_node: 'Demo.Alarms.Plant.PowerHouse.P-101.Vibration',
+                vibration: val,
+                unit: 'mm/s',
+                ts: new Date().toISOString()
+            };
+            applyIncomingSensorValue(val, 'WS NODE-RED', `WS Frame -> P-101.Vibration: ${val.toFixed(2)} mm/s`);
+            publishMqttVibration(payload);
+        }
+
+        function toggleWebSocketSource() {
+            const btn = document.getElementById('btn-ws-toggle');
+            const pill = document.getElementById('ws-status-pill');
+            if (appState.wsConnected && appState.wsSocket) {
+                appState.wsSocket.close();
+                appState.wsSocket = null;
+                appState.wsConnected = false;
+                btn.textContent = 'Verbinden';
+                pill.textContent = 'WS: SIM / STANDBY';
+                pill.className = 'px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-300';
+                return;
+            }
+
+            const url = (document.getElementById('ws-url-input')?.value || '').trim();
+            if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+                showToast('Ungültige WebSocket-URL (ws:// oder wss://)', 'fa-triangle-exclamation text-amber-400');
+                return;
+            }
+
+            try {
+                const socket = new WebSocket(url);
+                appState.wsSocket = socket;
+                pill.textContent = 'WS: VERBINDE...';
+                socket.onopen = () => {
+                    appState.wsConnected = true;
+                    btn.textContent = 'Trennen';
+                    pill.textContent = 'WS: LIVE (RPI 2)';
+                    pill.className = 'px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/50 text-emerald-300';
+                    showToast('WebSocket mit Node-RED Tunnel verbunden', 'fa-plug text-emerald-400');
+                };
+                socket.onmessage = (ev) => {
+                    let val = null;
+                    try {
+                        const parsed = JSON.parse(ev.data);
+                        val = parsed.vibration ?? parsed.value ?? parsed.payload;
+                    } catch (_) {
+                        val = ev.data;
+                    }
+                    applyIncomingSensorValue(val, 'WS LIVE', `WS [${new Date().toTimeString().split(' ')[0]}]: ${ev.data}`);
+                };
+                socket.onerror = () => {
+                    pill.textContent = 'WS: FALLBACK SIM';
+                    pill.className = 'px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/50 text-amber-300';
+                };
+                socket.onclose = () => {
+                    appState.wsConnected = false;
+                    btn.textContent = 'Verbinden';
+                };
+            } catch (e) {
+                showToast('WebSocket-Verbindung fehlgeschlagen', 'fa-triangle-exclamation text-rose-400');
+            }
+        }
+
+        function publishMqttVibration(payloadObj) {
+            if (!appState.mqttClient || !appState.mqttConnected) return;
+            const box = (document.getElementById('mqtt-box-id')?.value || 'kiste-01').trim() || 'kiste-01';
+            const topic = `/bbk-lf7/${box}/power-house/vibration`;
+            appState.mqttClient.publish(topic, JSON.stringify(payloadObj));
+        }
+
+        function renderForeignMqttTopics() {
+            const container = document.getElementById('foreign-mqtt-list');
+            const entries = Object.entries(appState.foreignTopicsSeen);
+            if (!container || !entries.length) return;
+            container.innerHTML = entries.slice(-3).map(([topic, info]) => `
+                <div class="p-2 rounded-xl bg-slate-950/90 border border-slate-800">
+                    <div class="text-sky-300 truncate">${topic}</div>
+                    <div class="text-slate-300 mt-0.5">Wert: <span class="text-white font-bold">${info.val}</span> • Format: ${info.format}</div>
+                </div>
+            `).join('');
+        }
+
+        function toggleMqttConnection() {
+            const btn = document.getElementById('btn-mqtt-toggle');
+            const pill = document.getElementById('mqtt-status-pill');
+            if (appState.mqttClient && appState.mqttConnected) {
+                appState.mqttClient.end(true);
+                appState.mqttClient = null;
+                appState.mqttConnected = false;
+                btn.textContent = 'MQTT Verbinden';
+                pill.textContent = 'MQTT: TRENNEN';
+                pill.className = 'px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-300';
+                return;
+            }
+
+            if (typeof mqtt === 'undefined') {
+                showToast('MQTT-Client nicht geladen', 'fa-triangle-exclamation text-rose-400');
+                return;
+            }
+
+            const box = (document.getElementById('mqtt-box-id')?.value || 'kiste-01').trim() || 'kiste-01';
+            const ownTopic = `/bbk-lf7/${box}/power-house/vibration`;
+            const wildcardTopic = '/bbk-lf7/+/power-house/vibration';
+
+            pill.textContent = 'MQTT: VERBINDE...';
+            const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+                clientId: 'cps-i40-ar-' + Math.random().toString(16).slice(2, 8),
+                clean: true,
+                connectTimeout: 4000
+            });
+            appState.mqttClient = client;
+
+            client.on('connect', () => {
+                appState.mqttConnected = true;
+                btn.textContent = 'MQTT Trennen';
+                pill.textContent = 'MQTT: HIVEMQ LIVE';
+                pill.className = 'px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/50 text-emerald-300';
+                client.subscribe([ownTopic, wildcardTopic]);
+                showToast(`MQTT abonniert: ${ownTopic}`, 'fa-tower-broadcast text-emerald-400');
+            });
+
+            client.on('message', (topic, message) => {
+                const rawStr = message.toString();
+                const ts = new Date().toTimeString().split(' ')[0];
+                if (topic === ownTopic) {
+                    let parsedVal = rawStr;
+                    try {
+                        const obj = JSON.parse(rawStr);
+                        parsedVal = obj.vibration ?? obj.value ?? rawStr;
+                    } catch (_) {
+                        // Plain text payload
+                    }
+                    document.getElementById('mqtt-text-display').textContent =
+                        `[${ts}] Topic ${topic} → Vibration: ${parsedVal} (Raw: ${rawStr})`;
+                    document.getElementById('mqtt-last-ts').textContent = ts;
+                    applyIncomingSensorValue(parsedVal, 'MQTT LIVE', document.getElementById('mqtt-text-display').textContent);
+                } else if (topic.startsWith('/bbk-lf7/')) {
+                    let fmt = 'Plain Text';
+                    let valDisplay = rawStr;
+                    try {
+                        const obj = JSON.parse(rawStr);
+                        fmt = 'JSON';
+                        valDisplay = obj.vibration ?? obj.value ?? rawStr;
+                    } catch (_) {
+                        if (Number.isFinite(parseFloat(rawStr))) fmt = 'Plain Float';
+                    }
+                    appState.foreignTopicsSeen[topic] = { val: valDisplay, format: fmt };
+                    renderForeignMqttTopics();
+                }
+            });
+
+            client.on('error', () => {
+                pill.textContent = 'MQTT: FEHLER';
+                pill.className = 'px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/50 text-amber-300';
+            });
+        }
+
+        // 1. REST Endpunkt: Letzter Wert aus der Datenbank
+        function getRestLatest() {
+            return {
+                endpoint: 'GET /api/v1/telemetry/latest',
+                status: 200,
+                latency_ms: 2,
+                data: appState.dbRecords[appState.dbRecords.length - 1] || null
+            };
+        }
+
+        // 2. REST Endpunkt: Daten der letzten 5 Minuten
+        function getRestLast5m() {
+            const cutoff = Date.now() - 5 * 60 * 1000;
+            const items = appState.dbRecords.filter(r => r.ts >= cutoff);
+            return {
+                endpoint: 'GET /api/v1/telemetry/last-5m',
+                status: 200,
+                latency_ms: 5,
+                from: items.length ? items[0].iso : null,
+                to: items.length ? items[items.length - 1].iso : null,
+                count: items.length,
+                items
+            };
+        }
+
+        // 3. REST Endpunkt: Durchschnitt der letzten 5 Minuten
+        function getRestAvg5m() {
+            const last5m = getRestLast5m();
+            const items = last5m.items;
+            if (!items.length) {
+                return {
+                    endpoint: 'GET /api/v1/telemetry/avg-5m',
+                    status: 200,
+                    avg_vibration_rms_mms: 0,
+                    min_vibration_rms_mms: 0,
+                    max_vibration_rms_mms: 0,
+                    sample_count: 0
+                };
+            }
+            const vals = items.map(r => r.vibration_rms_mms);
+            const sum = vals.reduce((acc, v) => acc + v, 0);
+            return {
+                endpoint: 'GET /api/v1/telemetry/avg-5m',
+                status: 200,
+                latency_ms: 4,
+                from: last5m.from,
+                to: last5m.to,
+                sensor_id: 'vib-01',
+                avg_vibration_rms_mms: Number((sum / vals.length).toFixed(3)),
+                min_vibration_rms_mms: Number(Math.min(...vals).toFixed(3)),
+                max_vibration_rms_mms: Number(Math.max(...vals).toFixed(3)),
+                sample_count: items.length
+            };
+        }
+
+        function selectRestEndpoint(key) {
+            appState.activeRestEndpoint = key;
+            ['latest', 'last5m', 'avg5m'].forEach(k => {
+                const btn = document.getElementById(`btn-rest-${k}`);
+                if (!btn) return;
+                btn.className = (k === key)
+                    ? 'w-full p-2.5 rounded-2xl border text-left transition bg-sky-500/15 border-sky-400/60 text-white'
+                    : 'w-full p-2.5 rounded-2xl border text-left transition hud-subcard text-slate-300 hover:border-slate-600';
+            });
+            refreshRestEndpoints();
+        }
+
+        function refreshRestEndpoints() {
+            const avg5m = getRestAvg5m();
+            document.getElementById('hist-avg-5m').textContent = `${avg5m.avg_vibration_rms_mms.toFixed(2)} mm/s`;
+            document.getElementById('hist-min-5m').textContent = `${avg5m.min_vibration_rms_mms.toFixed(2)} mm/s`;
+            document.getElementById('hist-max-5m').textContent = `${avg5m.max_vibration_rms_mms.toFixed(2)} mm/s`;
+            document.getElementById('hist-count-5m').textContent = `${avg5m.sample_count}`;
+
+            let payload;
+            if (appState.activeRestEndpoint === 'latest') payload = getRestLatest();
+            else if (appState.activeRestEndpoint === 'last5m') payload = getRestLast5m();
+            else payload = avg5m;
+
+            document.getElementById('rest-active-url').textContent = payload.endpoint;
+
+            const displayPayload = (appState.activeRestEndpoint === 'last5m' && payload.items.length > 5)
+                ? { ...payload, items: payload.items.slice(-5), note: `Vorschau: letzte 5 von ${payload.count} DB-Datensätzen` }
+                : payload;
+
+            const jsonStr = JSON.stringify(displayPayload, null, 2);
+            document.getElementById('rest-json-output').textContent = jsonStr;
+            document.getElementById('rest-payload-size').textContent = `~${new Blob([JSON.stringify(payload)]).size} B`;
+        }
+
+        function copyActiveRestJson() {
+            const text = document.getElementById('rest-json-output').textContent;
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast('REST-JSON kopiert', 'fa-copy text-sky-400');
+        }
+
+        /*************************************************************************
+         * 4. CHART.JS HISTORICAL DATA
+         *************************************************************************/
+        function setHistoryWindow(win) {
+            appState.historyWindow = win;
+            ['5m', '15m', '60m'].forEach(w => {
+                const btn = document.getElementById(`btn-hist-${w}`);
+                if (!btn) return;
+                btn.className = (w === win)
+                    ? 'px-2.5 py-1 rounded-lg bg-sky-400 text-slate-950 font-semibold'
+                    : 'px-2.5 py-1 rounded-lg text-slate-300 hover:text-white';
+            });
+            updateHistoryChartJs();
+        }
+
+        function initHistoryChartJs() {
+            const canvas = document.getElementById('history-chartjs-canvas');
+            if (!canvas || typeof Chart === 'undefined') return;
+            appState.historyChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Vib-Sensor #1 (mm/s)',
+                            data: [],
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.14)',
+                            borderWidth: 2,
+                            pointRadius: 1,
+                            fill: true,
+                            tension: 0.28
+                        },
+                        {
+                            label: 'Ø Letzte 5 Min (/avg-5m)',
+                            data: [],
+                            borderColor: '#f59e0b',
+                            borderDash: [5, 4],
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: {
+                        legend: { labels: { color: '#cbd5e1', font: { size: 10, family: 'JetBrains Mono' } } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', maxTicksLimit: 7, font: { size: 10, family: 'JetBrains Mono' } }, grid: { color: 'rgba(56,189,248,0.08)' } },
+                        y: { min: 0, suggestedMax: 6.5, ticks: { color: '#94a3b8', font: { size: 10, family: 'JetBrains Mono' } }, grid: { color: 'rgba(56,189,248,0.08)' } }
+                    }
+                }
+            });
+            updateHistoryChartJs();
+        }
+
+        function updateHistoryChartJs() {
+            if (!appState.historyChart) return;
+            const mins = appState.historyWindow === '60m' ? 60 : (appState.historyWindow === '15m' ? 15 : 5);
+            const cutoff = Date.now() - mins * 60 * 1000;
+            const filtered = appState.dbRecords.filter(r => r.ts >= cutoff);
+            const step = Math.max(1, Math.floor(filtered.length / 75));
+            const sampled = filtered.filter((_, idx) => idx % step === 0);
+            const avg5m = getRestAvg5m().avg_vibration_rms_mms;
+
+            appState.historyChart.data.labels = sampled.map(r => new Date(r.ts).toTimeString().split(' ')[0]);
+            appState.historyChart.data.datasets[0].data = sampled.map(r => r.vibration_rms_mms);
+            appState.historyChart.data.datasets[1].data = sampled.map(() => avg5m);
+            appState.historyChart.update('none');
+        }
+
+        /*************************************************************************
+         * 5. 24H DATA VOLUME & REDUCTION CALCULATOR
+         *************************************************************************/
+        function updateDataVolumeCalculator() {
+            const rateHz = parseInt(document.getElementById('calc-rate-select')?.value || '10', 10);
+            const dailySamples = 86400 * rateHz;
+            const rawMbDay = (dailySamples * 120) / (1024 * 1024);
+            const rawGbMonth = (rawMbDay * 30) / 1024;
+
+            let factor = 1.0;
+            if (document.getElementById('strat-deadband')?.checked) factor *= 0.55;
+            if (document.getElementById('strat-event')?.checked) factor *= 0.65;
+            if (document.getElementById('strat-rollup')?.checked) factor *= 0.45;
+            if (document.getElementById('strat-binary')?.checked) factor *= 0.25;
+
+            const reducedMbDay = rawMbDay * factor;
+            const savings = (1 - factor) * 100;
+
+            document.getElementById('calc-daily-samples').textContent = dailySamples.toLocaleString('de-DE');
+            document.getElementById('calc-daily-samples-sub').textContent = `86.400 s × ${rateHz.toLocaleString('de-DE')} Hz (1 Sensor)`;
+            document.getElementById('calc-raw-mb').textContent = `${rawMbDay.toFixed(2)} MB / Tag`;
+            document.getElementById('calc-raw-month').textContent = `~${rawGbMonth.toFixed(2)} GB / 30 Tage`;
+            document.getElementById('calc-reduced-mb').textContent = `${reducedMbDay.toFixed(2)} MB / Tag`;
+            document.getElementById('calc-savings-pct').textContent = `Ersparnis: ${savings.toFixed(1)} %`;
+        }
+
+        /*************************************************************************
+         * 6. WAVEFORM, SPECTRUM, 3D SIM-AR & MAIN LOOP
+         *************************************************************************/
+        function drawWaveformCanvas() {
+            const canvas = document.getElementById('vibration-waveform-canvas');
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width || 380;
+            canvas.height = rect.height || 140;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.clearRect(0, 0, w, h);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
+            ctx.lineWidth = 1;
+            for (let y = 0; y <= h; y += 28) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+
+            const pts = appState.waveformHistory;
+            if (!pts.length) return;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            pts.forEach((val, idx) => {
+                const x = (idx / Math.max(1, pts.length - 1)) * w;
+                const y = h - Math.min(h - 8, (val / 6.5) * (h - 14)) - 6;
+                if (idx === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        }
+
+        function drawSpectrumCanvas() {
+            const canvas = document.getElementById('vibration-spectrum-canvas');
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width || 160;
+            canvas.height = rect.height || 96;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.clearRect(0, 0, w, h);
+            const bars = 12;
+            const gap = 3;
+            const barW = Math.max(4, (w - gap * (bars - 1)) / bars);
+            const scale = appState.scenario === 'fault' ? 0.9 : (appState.scenario === 'resonance' ? 0.6 : 0.35);
+
+            for (let i = 0; i < bars; i++) {
+                const amp = (0.25 + 0.75 * Math.abs(Math.sin(appState.phase * 1.6 + i * 0.85))) * scale * h;
+                const x = i * (barW + gap);
+                ctx.fillStyle = i === 3 || i === 4 ? '#38bdf8' : 'rgba(56, 189, 248, 0.45)';
+                ctx.fillRect(x, h - amp, barW, amp);
+            }
+        }
+
+        function drawSimArCanvas() {
+            const canvas = document.getElementById('ar-sim-canvas');
+            if (!canvas || appState.viewMode !== 'sim-ar') return;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width || 640;
+            canvas.height = rect.height || 280;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.fillStyle = '#040914';
+            ctx.fillRect(0, 0, w, h);
+
+            const jitter = appState.shockPulse * 5;
+            const cx = w * 0.5 + (Math.random() - 0.5) * jitter;
+            const cy = h * 0.52 + (Math.random() - 0.5) * jitter;
+
+            // Perspective 3D wireframe box representing +AM Automat / +AL Transfer
+            const rx = 115 * Math.cos(appState.simYaw * 0.5);
+            const ry = 55;
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+            ctx.lineWidth = 1.6;
+            ctx.strokeRect(cx - rx, cy - ry, rx * 2, ry * 2);
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+            ctx.strokeRect(cx - rx * 0.75, cy - ry * 1.45, rx * 1.5, ry * 1.3);
+
+            // Virtual Hiro Marker Anchor
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cx - 32, cy - 32, 64, 64);
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+            ctx.fillRect(cx - 18, cy - 18, 36, 36);
+
+            ctx.fillStyle = '#e2e8f0';
+            ctx.font = '11px JetBrains Mono';
+            ctx.fillText('ANCHOR: HIRO-BEF-01 (+AM / VIB-01)', cx - 105, cy - 44);
+        }
+
+        function tickTelemetry() {
+            appState.phase += 0.25;
+            appState.shockPulse = Math.max(0, appState.shockPulse - 0.08);
+
+            const cfg = SCENARIO_CONFIG[appState.scenario] || SCENARIO_CONFIG.normal;
+            const sample = Math.max(
+                0.15,
+                cfg.base + Math.sin(appState.phase * 1.35) * 0.22 + appState.shockPulse + (Math.random() - 0.5) * cfg.noise
+            );
+
+            appState.waveformHistory.push(sample);
+            if (appState.waveformHistory.length > appState.maxWaveformPoints) {
+                appState.waveformHistory.shift();
+            }
+
+            appendDbRecord(sample);
+            publishMqttVibration({
+                source: 'rpi2-nodered-sqlite',
+                opcua_node: 'Demo.Alarms.Plant.PowerHouse.P-101.Vibration',
+                vibration_rms_mms: Number(sample.toFixed(2)),
+                scenario: appState.scenario,
+                ts: new Date().toISOString()
+            });
+
+            const peak = (sample * 1.32).toFixed(2);
+            document.getElementById('live-vib-rms').textContent = sample.toFixed(2);
+            const zoneEl = document.getElementById('live-vib-zone');
+            zoneEl.textContent = `${cfg.zone} • (Peak: ${peak} mm/s)`;
+            zoneEl.className = `text-[11px] font-semibold mt-0.5 ${cfg.color}`;
+
+            document.getElementById('vib-dom-freq').textContent = cfg.freq;
+            document.getElementById('vib-event-tag').textContent = appState.shockPulse > 0.35 ? 'EVENT: +5d KUGELABWURF' : cfg.event;
+            document.getElementById('ar-overlay-vib').textContent = `${sample.toFixed(2)} mm/s`;
+
+            // Update Hardware-Map indicators
+            const rfidCode = appState.rfidTags[appState.rfidIndex].slice(0, 8);
+            const rfidEl = document.getElementById('hw-rfid-tag');
+            if (rfidEl) rfidEl.textContent = rfidCode;
+            const stopperEl = document.getElementById('hw-stopper-impact');
+            if (stopperEl) stopperEl.textContent = `+${(sample * 0.14).toFixed(2)} mm/s`;
+            const speedEl = document.getElementById('hw-conveyor-speed');
+            if (speedEl) speedEl.textContent = appState.scenario === 'fault' ? '0.00 m/s (STOP)' : '0.18 m/s';
+            const stopperStateEl = document.getElementById('hw-stopper-state');
+            if (stopperStateEl) stopperStateEl.textContent = appState.scenario === 'fault' ? 'BLOCKIERT' : 'VERRIEGELT';
+            if (Math.floor(appState.phase) % 4 === 0) {
+                appendPipelineLog(`SIM (${appState.scenario}): ${sample.toFixed(2)} mm/s → SQLite (${appState.dbRecords.length})`);
+            }
+
+            const pointerPct = Math.min(94, Math.max(4, (sample / 6.5) * 100));
+            document.getElementById('iso-marker-pointer').style.left = `${pointerPct}%`;
+
+            drawWaveformCanvas();
+            drawSpectrumCanvas();
+            drawSimArCanvas();
+            refreshRestEndpoints();
+            updateHistoryChartJs();
+        }
+
+        function bindSimArPointer() {
+            const canvas = document.getElementById('ar-sim-canvas');
+            if (!canvas) return;
+            canvas.addEventListener('pointerdown', (e) => {
+                appState.isDragging = true;
+                appState.lastPointerX = e.clientX;
+                appState.lastPointerY = e.clientY;
+            });
+            window.addEventListener('pointermove', (e) => {
+                if (!appState.isDragging) return;
+                appState.simYaw += (e.clientX - appState.lastPointerX) * 0.01;
+                appState.simPitch += (e.clientY - appState.lastPointerY) * 0.01;
+                appState.lastPointerX = e.clientX;
+                appState.lastPointerY = e.clientY;
+            });
+            window.addEventListener('pointerup', () => {
+                appState.isDragging = false;
+            });
+        }
+
+        function initApp() {
+            seedHistoricalDbRecords();
+            for (let i = 0; i < 65; i++) {
+                appState.waveformHistory.push(1.12 + Math.sin(i * 0.22) * 0.16);
+            }
+            bindSimArPointer();
+            initHistoryChartJs();
+            updateDataVolumeCalculator();
+            refreshRestEndpoints();
+            tickTelemetry();
+
+            setInterval(tickTelemetry, 1000);
+            setInterval(() => {
+                appState.rfidIndex = (appState.rfidIndex + 1) % appState.rfidTags.length;
+                appState.processStepIndex = (appState.processStepIndex + 1) % 5;
+            }, 3500);
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
 </body>
 </html>
