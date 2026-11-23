@@ -1,0 +1,529 @@
+[
+    {
+        "id": "29a480ac2e0d4dd9",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "e1f07f7afaf0595c",
+        "type": "debug",
+        "z": "29a480ac2e0d4dd9",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1040,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "f8591c204c60fac3",
+        "type": "inject",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "props": [
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "2",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "ns=2;s=Demo.Alarms.Plant.PowerHouse.P-101.Vibration",
+        "x": 310,
+        "y": 260,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "e746c5d03d02d495",
+        "type": "websocket out",
+        "z": "29a480ac2e0d4dd9",
+        "name": "/ws/vibration",
+        "server": "5a68fd012d064f0f",
+        "client": "",
+        "x": 1050,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "155c44873be63db3",
+        "type": "mqtt out",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "topic": "/bbk-lf7/21/power-house/vibration",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "c646f029c8dd848a",
+        "x": 1120,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "d2b537e372044cad",
+        "type": "mqtt in",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "topic": "/bbk-lf7/+/power-house/vibration",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "c646f029c8dd848a",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 390,
+        "y": 540,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "1a87c78aa1528043",
+        "type": "inject",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "props": [
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "2",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 310,
+        "y": 320,
+        "wires": [
+            [
+                "f7f1552bb256958f"
+            ]
+        ]
+    },
+    {
+        "id": "f7f1552bb256958f",
+        "type": "function",
+        "z": "29a480ac2e0d4dd9",
+        "name": "function 1",
+        "func": "// Get the current number from node context (default to 2)\nlet count = context.get('count') || 2;\n\n// Set the payload to the current number\nmsg.payload = count;\n\n// Increment the counter, and reset back to 2 if it passes 5\ncount++;\nif (count > 5) {\n    count = 2;\n}\n\n// Save the updated number for the next run\ncontext.set('count', count);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 520,
+        "y": 320,
+        "wires": [
+            [
+                "e1f07f7afaf0595c",
+                "e746c5d03d02d495",
+                "155c44873be63db3",
+                "ea4001f9ea954c14",
+                "d631fcd53662df9a",
+                "105094d525cd7eb4"
+            ]
+        ]
+    },
+    {
+        "id": "fa6f563825a2ee24",
+        "type": "comment",
+        "z": "29a480ac2e0d4dd9",
+        "name": "OPC UA CLIENT",
+        "info": "OPC UA CLIENT\n",
+        "x": 540,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "1d602199827e66a6",
+        "type": "inject",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 350,
+        "y": 1180,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "62095a5bee8a994f",
+        "type": "exec",
+        "z": "29a480ac2e0d4dd9",
+        "command": "sqlite3 vibration.db \"CREATE TABLE IF NOT EXISTS measurements (id INTEGER PRIMARY KEY AUTOINCREMENT, value REAL NOT NULL, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Create Table",
+        "x": 590,
+        "y": 1180,
+        "wires": [
+            [],
+            [
+                "59e961a0e741ed1a"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "ea4001f9ea954c14",
+        "type": "function",
+        "z": "29a480ac2e0d4dd9",
+        "name": "Build SQL Insert",
+        "func": "const val = parseFloat(msg.payload);\nif (!isNaN(val)) {\n    msg.payload = `sqlite3 vibration.db \"INSERT INTO measurements (value) VALUES (${val});\"`;\n    return msg;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1060,
+        "y": 340,
+        "wires": [
+            [
+                "1a685223430783a3"
+            ]
+        ]
+    },
+    {
+        "id": "1a685223430783a3",
+        "type": "exec",
+        "z": "29a480ac2e0d4dd9",
+        "command": "",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "",
+        "x": 1330,
+        "y": 340,
+        "wires": [
+            [],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "017d3677dc579f90",
+        "type": "http in",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "url": "/api/vibration/latest",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 360,
+        "y": 740,
+        "wires": [
+            [
+                "a73b63dbfceb356d"
+            ]
+        ]
+    },
+    {
+        "id": "a73b63dbfceb356d",
+        "type": "exec",
+        "z": "29a480ac2e0d4dd9",
+        "command": "sqlite3 -json vibration.db \"SELECT value, timestamp FROM measurements ORDER BY id DESC LIMIT 1;\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Latest value",
+        "x": 610,
+        "y": 740,
+        "wires": [
+            [
+                "88fec74dc9d0ba20"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "88fec74dc9d0ba20",
+        "type": "function",
+        "z": "29a480ac2e0d4dd9",
+        "name": "Format JSON & CORS",
+        "func": "msg.headers = {\n    \"Access-Control-Allow-Origin\": \"*\",\n    \"Content-Type\": \"application/json\"\n};\nmsg.payload = msg.payload.trim() ? JSON.parse(msg.payload) : [];\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 860,
+        "y": 820,
+        "wires": [
+            [
+                "fe4f9ee290b7102c"
+            ]
+        ]
+    },
+    {
+        "id": "fe4f9ee290b7102c",
+        "type": "http response",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 1090,
+        "y": 820,
+        "wires": []
+    },
+    {
+        "id": "e7729a3b64b9c5c9",
+        "type": "http in",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "url": "/api/vibration/history",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 370,
+        "y": 820,
+        "wires": [
+            [
+                "f36881528a8683a2"
+            ]
+        ]
+    },
+    {
+        "id": "f36881528a8683a2",
+        "type": "exec",
+        "z": "29a480ac2e0d4dd9",
+        "command": "sqlite3 -json vibration.db \"SELECT value, timestamp FROM measurements WHERE timestamp >= datetime('now', '-5 minutes') ORDER BY timestamp ASC;\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "history",
+        "x": 590,
+        "y": 820,
+        "wires": [
+            [
+                "88fec74dc9d0ba20"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "372eef65fa0dbca3",
+        "type": "http in",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "url": "/api/vibration/average",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 370,
+        "y": 900,
+        "wires": [
+            [
+                "d039029b96b35baa"
+            ]
+        ]
+    },
+    {
+        "id": "d039029b96b35baa",
+        "type": "exec",
+        "z": "29a480ac2e0d4dd9",
+        "command": "sqlite3 -json vibration.db \"SELECT AVG(value) AS avg, MIN(value) AS min, MAX(value) AS max FROM measurements WHERE timestamp >= datetime('now', '-5 minutes');\"",
+        "addpay": "",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Average",
+        "x": 600,
+        "y": 900,
+        "wires": [
+            [
+                "88fec74dc9d0ba20"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "59e961a0e741ed1a",
+        "type": "debug",
+        "z": "29a480ac2e0d4dd9",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 780,
+        "y": 1180,
+        "wires": []
+    },
+    {
+        "id": "d631fcd53662df9a",
+        "type": "function",
+        "z": "29a480ac2e0d4dd9",
+        "name": "Alarm mit Recovery Threshold",
+        "func": "const ALARM_THRESHOLD    = 4.0; // Adjust to your machine's mm/s\nconst RECOVERY_THRESHOLD = 3; // Must be lower than ALARM_THRESHOLD\n\n// Works whether msg.payload is a plain number or { value: ... }\nconst value = typeof msg.payload === \"object\" ? parseFloat(msg.payload.value) : parseFloat(msg.payload);\nif (isNaN(value)) return null;\n\nlet active = context.get(\"active\") || false;\n\n// Trigger Alarm (once)\nif (!active && value > ALARM_THRESHOLD) {\n    active = true;\n    context.set(\"active\", active);\n    msg.payload = { state: \"alarm\", value: value, ts: Date.now() };\n    return msg;\n}\n\n// Trigger Recovery / Entwarnung (once)\nif (active && value < RECOVERY_THRESHOLD) {\n    active = false;\n    context.set(\"active\", active);\n    msg.payload = { state: \"ok\", value: value, ts: Date.now() };\n    return msg;\n}\n\nreturn null; // Do not send anything in between",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1110,
+        "y": 600,
+        "wires": [
+            [
+                "9ea1457e3d7941fa"
+            ]
+        ]
+    },
+    {
+        "id": "9ea1457e3d7941fa",
+        "type": "mqtt out",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "topic": "lf7/21/power-house/vibration/alarm",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "c646f029c8dd848a",
+        "x": 1420,
+        "y": 600,
+        "wires": []
+    },
+    {
+        "id": "105094d525cd7eb4",
+        "type": "trigger",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "op1": "wieder verfügbar",
+        "op2": "Ausfall",
+        "op1type": "str",
+        "op2type": "str",
+        "duration": "15",
+        "extend": true,
+        "overrideDelay": false,
+        "units": "s",
+        "reset": "",
+        "bytopic": "all",
+        "topic": "topic",
+        "outputs": 1,
+        "x": 1050,
+        "y": 680,
+        "wires": [
+            [
+                "8a059b2a0fa24356"
+            ]
+        ]
+    },
+    {
+        "id": "8a059b2a0fa24356",
+        "type": "mqtt out",
+        "z": "29a480ac2e0d4dd9",
+        "name": "",
+        "topic": "lf7/21/power-house/vibration/status",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "c646f029c8dd848a",
+        "x": 1420,
+        "y": 680,
+        "wires": []
+    },
+    {
+        "id": "5a68fd012d064f0f",
+        "type": "websocket-listener",
+        "path": "/ws/vibration",
+        "wholemsg": "false"
+    },
+    {
+        "id": "c646f029c8dd848a",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "broker.hivemq.com",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    }
+]
